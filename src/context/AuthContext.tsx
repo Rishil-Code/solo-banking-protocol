@@ -2,67 +2,41 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, SecurityLog } from '@/lib/types';
 import { toast } from '@/components/ui/use-toast';
-
-interface AuthContextType {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
-  securityLogs: SecurityLog[];
-  activateSecurityProtocol: () => void;
-  isSecurityProtocolActive: boolean;
-  simulateHack: (type: string) => void;
-  createAccount: (username: string, password: string, email: string, initialBalance: number) => Promise<boolean>;
-}
+import { AuthContextType, StoredUser, MOCK_USERS } from '@/types/auth';
+import { useSecurityLogs } from '@/hooks/useSecurityLogs';
+import { 
+  saveToLocalStorage, 
+  loadUserFromStorage, 
+  loadLogsFromStorage,
+  loadSecurityProtocolFromStorage,
+  loadUsersFromStorage
+} from '@/utils/localStorage';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Mock user data structure with passwords
-interface StoredUser extends User {
-  password: string;
-}
-
-// Initial mock users
-const MOCK_USERS: StoredUser[] = [
-  {
-    id: '1',
-    username: 'jaya',
-    password: 'ntr',
-    email: 'jaya@example.com',
-    balance: 10000,
-    creationDate: new Date().toISOString()
-  }
-];
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
   const [isSecurityProtocolActive, setIsSecurityProtocolActive] = useState(false);
   const [storedUsers, setStoredUsers] = useState<StoredUser[]>(MOCK_USERS);
   
   useEffect(() => {
-    // Check for saved session and data
-    const savedUser = localStorage.getItem('engineeringBankUser');
-    const savedLogs = localStorage.getItem('engineeringBankLogs');
-    const securityProtocol = localStorage.getItem('securityProtocolActive');
-    const savedUsers = localStorage.getItem('engineeringBankUsers');
+    // Load data from localStorage
+    const savedUser = loadUserFromStorage();
+    const savedLogs = loadLogsFromStorage();
+    const securityProtocol = loadSecurityProtocolFromStorage();
+    const savedUsers = loadUsersFromStorage();
     
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      setUser(savedUser);
     }
     
-    if (savedLogs) {
-      setSecurityLogs(JSON.parse(savedLogs));
-    }
-    
-    if (securityProtocol === 'true') {
+    if (securityProtocol) {
       setIsSecurityProtocolActive(true);
     }
 
-    if (savedUsers) {
-      setStoredUsers(JSON.parse(savedUsers));
+    if (savedUsers.length > 0) {
+      setStoredUsers(savedUsers);
     } else {
       // Initialize users in localStorage if not already present
       localStorage.setItem('engineeringBankUsers', JSON.stringify(MOCK_USERS));
@@ -71,30 +45,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsLoading(false);
   }, []);
   
-  const saveToLocalStorage = (userData: User | null, logs: SecurityLog[], securityActive: boolean, users: StoredUser[]) => {
-    if (userData) {
-      localStorage.setItem('engineeringBankUser', JSON.stringify(userData));
-    } else {
-      localStorage.removeItem('engineeringBankUser');
-    }
-    
-    localStorage.setItem('engineeringBankLogs', JSON.stringify(logs));
-    localStorage.setItem('securityProtocolActive', securityActive.toString());
-    localStorage.setItem('engineeringBankUsers', JSON.stringify(users));
-  };
-  
-  const addSecurityLog = (log: Omit<SecurityLog, 'id' | 'timestamp'>) => {
-    const newLog: SecurityLog = {
-      ...log,
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp: new Date().toISOString()
-    };
-    
-    const updatedLogs = [newLog, ...securityLogs];
-    setSecurityLogs(updatedLogs);
-    saveToLocalStorage(user, updatedLogs, isSecurityProtocolActive, storedUsers);
-    return newLog;
-  };
+  // Initialize security logs
+  const { securityLogs, addSecurityLog, setSecurityLogs } = useSecurityLogs(
+    loadLogsFromStorage(), 
+    user, 
+    isSecurityProtocolActive, 
+    storedUsers
+  );
   
   const createAccount = async (username: string, password: string, email: string, initialBalance: number): Promise<boolean> => {
     // Simulate API delay
@@ -186,7 +143,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     
     setUser(null);
-    saveToLocalStorage(null, securityLogs, isSecurityProtocolActive);
+    saveToLocalStorage(null, securityLogs, isSecurityProtocolActive, storedUsers);
   };
   
   const activateSecurityProtocol = () => {
@@ -199,7 +156,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       success: true
     });
     
-    saveToLocalStorage(user, securityLogs, true);
+    saveToLocalStorage(user, securityLogs, true, storedUsers);
     toast({
       title: "Security Protocol Activated",
       description: "Your account is now protected against hacking attempts",
