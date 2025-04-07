@@ -13,12 +13,18 @@ interface AuthContextType {
   activateSecurityProtocol: () => void;
   isSecurityProtocolActive: boolean;
   simulateHack: (type: string) => void;
+  createAccount: (username: string, password: string, email: string, initialBalance: number) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock user data
-const MOCK_USERS = [
+// Mock user data structure with passwords
+interface StoredUser extends User {
+  password: string;
+}
+
+// Initial mock users
+const MOCK_USERS: StoredUser[] = [
   {
     id: '1',
     username: 'jaya',
@@ -34,12 +40,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
   const [isSecurityProtocolActive, setIsSecurityProtocolActive] = useState(false);
+  const [storedUsers, setStoredUsers] = useState<StoredUser[]>(MOCK_USERS);
   
   useEffect(() => {
-    // Check for saved session
+    // Check for saved session and data
     const savedUser = localStorage.getItem('engineeringBankUser');
     const savedLogs = localStorage.getItem('engineeringBankLogs');
     const securityProtocol = localStorage.getItem('securityProtocolActive');
+    const savedUsers = localStorage.getItem('engineeringBankUsers');
     
     if (savedUser) {
       setUser(JSON.parse(savedUser));
@@ -52,11 +60,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (securityProtocol === 'true') {
       setIsSecurityProtocolActive(true);
     }
+
+    if (savedUsers) {
+      setStoredUsers(JSON.parse(savedUsers));
+    } else {
+      // Initialize users in localStorage if not already present
+      localStorage.setItem('engineeringBankUsers', JSON.stringify(MOCK_USERS));
+    }
     
     setIsLoading(false);
   }, []);
   
-  const saveToLocalStorage = (userData: User | null, logs: SecurityLog[], securityActive: boolean) => {
+  const saveToLocalStorage = (userData: User | null, logs: SecurityLog[], securityActive: boolean, users: StoredUser[]) => {
     if (userData) {
       localStorage.setItem('engineeringBankUser', JSON.stringify(userData));
     } else {
@@ -65,6 +80,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     localStorage.setItem('engineeringBankLogs', JSON.stringify(logs));
     localStorage.setItem('securityProtocolActive', securityActive.toString());
+    localStorage.setItem('engineeringBankUsers', JSON.stringify(users));
   };
   
   const addSecurityLog = (log: Omit<SecurityLog, 'id' | 'timestamp'>) => {
@@ -76,15 +92,54 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     const updatedLogs = [newLog, ...securityLogs];
     setSecurityLogs(updatedLogs);
-    saveToLocalStorage(user, updatedLogs, isSecurityProtocolActive);
+    saveToLocalStorage(user, updatedLogs, isSecurityProtocolActive, storedUsers);
     return newLog;
+  };
+  
+  const createAccount = async (username: string, password: string, email: string, initialBalance: number): Promise<boolean> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Check if username already exists
+    if (storedUsers.some(u => u.username === username)) {
+      addSecurityLog({
+        userId: '0',
+        activityType: 'security_protocol',
+        description: `Failed account creation: Username "${username}" already exists`,
+        success: false
+      });
+      return false;
+    }
+    
+    // Create new user
+    const newUser: StoredUser = {
+      id: Math.random().toString(36).substring(2, 9),
+      username,
+      password, // In a real app, this would be hashed
+      email,
+      balance: initialBalance,
+      creationDate: new Date().toISOString()
+    };
+    
+    const updatedUsers = [...storedUsers, newUser];
+    setStoredUsers(updatedUsers);
+    
+    addSecurityLog({
+      userId: newUser.id,
+      activityType: 'security_protocol',
+      description: `Account created for user "${username}"`,
+      success: true
+    });
+    
+    saveToLocalStorage(user, securityLogs, isSecurityProtocolActive, updatedUsers);
+    return true;
   };
   
   const login = async (username: string, password: string): Promise<boolean> => {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    const foundUser = MOCK_USERS.find(u => u.username === username && u.password === password);
+    const foundUser = storedUsers.find(u => u.username === username && u.password === password);
     
     if (foundUser) {
       const userData: User = {
@@ -104,7 +159,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         success: true
       });
       
-      saveToLocalStorage(userData, securityLogs, isSecurityProtocolActive);
+      saveToLocalStorage(userData, securityLogs, isSecurityProtocolActive, storedUsers);
       return true;
     } else {
       // Log failed login attempt
@@ -115,7 +170,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         success: false
       });
       
-      saveToLocalStorage(null, securityLogs, isSecurityProtocolActive);
+      saveToLocalStorage(null, securityLogs, isSecurityProtocolActive, storedUsers);
       return false;
     }
   };
@@ -193,7 +248,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         securityLogs,
         activateSecurityProtocol,
         isSecurityProtocolActive,
-        simulateHack
+        simulateHack,
+        createAccount
       }}
     >
       {children}
